@@ -1,6 +1,3 @@
-#
-# Copyright (C) 2006-2017 OpenWrt.org
-#
 # This is free software, licensed under the GNU General Public License v2.
 # See /LICENSE for more information.
 #
@@ -8,14 +5,23 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=node
-PKG_VERSION:=v12.15.0
+
+ifeq ($(CONFIG_NODEJS_10),y)
+PKG_VERSION:=v10.19.0
 PKG_RELEASE:=1
+PKG_HASH:=622721bc3e6b65faf7eb6a22bfb6e3e31817e42212aa6bf5a7991ea7d9b6f169
+PATCH_DIR:=./patches/v10.x
+else
+PKG_VERSION:=v12.16.1
+PKG_RELEASE:=1
+PKG_HASH:=0a95845ba02c46102b5671d0c5732460073f2d397488337e18d1fc30146d412d
+PATCH_DIR:=./patches/v12.x
+endif
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://nodejs.org/dist/$(PKG_VERSION)
-PKG_HASH:=d2fb4fa80ccf321570552b0a6e6b5f2aedeb281a8450207b057cf54c54d5a81b
 
-PKG_MAINTAINER:=John Crispin <blogic@openwrt.org>, Adrian Panella <ianchi74@outlook.com>
+PKG_MAINTAINER:=Hirokazu MORIKAWA <morikw2@gmail.com>
 PKG_LICENSE:=MIT
 PKG_LICENSE_FILES:=LICENSE
 PKG_CPE_ID:=cpe:/a:nodejs:node.js
@@ -47,7 +53,12 @@ define Package/node/description
   Node.js® is a JavaScript runtime built on Chrome's V8 JavaScript engine. Node.js uses
   an event-driven, non-blocking I/O model that makes it lightweight and efficient. Node.js'
    package ecosystem, npm, is the largest ecosystem of open source libraries in the world.
-  *** Requires GCC/G++ Multilib on host system to build 32-bit target ***
+
+  *** The following preparations must be made on the host side. ***
+      1. gcc 6.3 or higher is required.
+      2. To build a 32-bit target, gcc-multilib, g++-multilib are required.
+      3. Requires libatomic package. (If necessary, install the 32-bit library at the same time.)
+     ex) sudo apt-get install gcc-multilib g++-multilib
 endef
 
 define Package/node-npm
@@ -64,7 +75,22 @@ define Package/node-npm/description
 endef
 
 define Package/node/config
-	if PACKAGE_node
+	menu "Configuration"
+		depends on PACKAGE_node
+
+	choice
+		prompt "Version Selection"
+		default NODEJS_12
+		help
+		 Select node.js version.
+
+		config NODEJS_10
+			bool "10.x Active LTS"
+
+		config NODEJS_12
+			bool "12.x Active LTS"
+	endchoice
+
 	choice
 		prompt "i18n features"
 		default NODEJS_ICU_NONE
@@ -82,10 +108,15 @@ define Package/node/config
 			depends on ARCH_64BIT&&!BIG_ENDIAN
 			bool "system-icu"
 	endchoice
-	endif
+
+	endmenu
 endef
 
 NODEJS_CPU:=$(subst powerpc,ppc,$(subst aarch64,arm64,$(subst x86_64,x64,$(subst i386,ia32,$(ARCH)))))
+
+ifeq ($(CONFIG_NODEJS_10),y)
+TARGET_LDFLAGS+=-latomic
+endif
 
 ifneq ($(CONFIG_ARCH_64BIT),y)
 FORCE_32BIT:=-m32
@@ -93,7 +124,7 @@ endif
 
 MAKE_VARS+= \
 	DESTCPU=$(NODEJS_CPU) \
-	LD_LIBRARY_PATH=$(STAGING_DIR_HOSTPKG)/share/icu/65.1/lib
+	LD_LIBRARY_PATH=$(STAGING_DIR_HOSTPKG)/share/icu/current/lib
 
 CONFIGURE_VARS:= \
 	CC="$(TARGET_CC) $(TARGET_OPTIMIZATION)" \
@@ -122,7 +153,6 @@ CONFIGURE_ARGS:= \
 	--prefix=/usr
 
 HOST_CONFIGURE_VARS:=
-
 HOST_CONFIGURE_ARGS:= \
 	--dest-os=$(if $(findstring Darwin,$(HOST_OS)),mac,linux) \
 	--with-intl=none \
